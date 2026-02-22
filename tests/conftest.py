@@ -10,6 +10,8 @@ os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault("API_KEY", "test-api-key-123")  # Match test API key
 os.environ.setdefault("OLLAMA_URL", "http://localhost:11434")
 os.environ.setdefault("OLLAMA_MODEL", "llava")
+# Disable Redis for tests (use in-memory rate limiting)
+os.environ.setdefault("REDIS_ENABLED", "false")
 
 
 @pytest.fixture

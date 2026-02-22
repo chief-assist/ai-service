@@ -17,6 +17,7 @@ from app.models.schemas import (
     CookingHistoryEntry,
 )
 from app.services.ollama_service import OllamaService
+from app.services.cache_service import cache_service
 import json
 import re
 
@@ -29,13 +30,18 @@ class RecipeService:
     def __init__(self):
         """Initialize recipe service"""
         self.ollama_service = OllamaService()
+        self.cache = cache_service
+        # Cache TTL: 24 hours (recipes don't change often)
+        self.suggestion_cache_ttl = 24 * 3600
+        self.details_cache_ttl = 24 * 3600
+        self.personalized_cache_ttl = 1 * 3600  # 1 hour (personalized changes more)
     
     async def suggest_recipes(
         self,
         request: RecipeSuggestionRequest
     ) -> RecipeSuggestionResponse:
         """
-        Generate recipe suggestions based on ingredients
+        Generate recipe suggestions based on ingredients with caching
         
         Args:
             request: Recipe suggestion request
@@ -44,6 +50,21 @@ class RecipeService:
             Recipe suggestions response
         """
         try:
+            # Generate cache key
+            cache_key = cache_service.generate_key(
+                "recipes:suggest",
+                sorted(request.ingredients),
+                filters=request.filters.dict() if request.filters else None,
+                max_results=request.max_results
+            )
+            
+            # Check cache
+            if self.cache.enabled:
+                cached_result = await self.cache.get(cache_key)
+                if cached_result:
+                    logger.info(f"Cache hit for recipe suggestions: {cache_key[:50]}...")
+                    return RecipeSuggestionResponse(**cached_result)
+            
             # Build prompt for recipe suggestions
             prompt = self._build_suggestion_prompt(request)
             
@@ -63,10 +84,17 @@ class RecipeService:
             # Limit results
             recipes = recipes[:request.max_results]
             
-            return RecipeSuggestionResponse(
+            result = RecipeSuggestionResponse(
                 recipes=recipes,
                 total_results=len(recipes)
             )
+            
+            # Cache the result
+            if self.cache.enabled:
+                await self.cache.set(cache_key, result.dict(), ttl=self.suggestion_cache_ttl)
+                logger.info(f"Cached recipe suggestions: {cache_key[:50]}...")
+            
+            return result
             
         except Exception as e:
             logger.error(f"Recipe suggestion failed: {str(e)}")
@@ -77,7 +105,7 @@ class RecipeService:
         request: RecipeDetailsRequest
     ) -> RecipeDetailsResponse:
         """
-        Generate detailed recipe instructions
+        Generate detailed recipe instructions with caching
         
         Args:
             request: Recipe details request
@@ -86,6 +114,22 @@ class RecipeService:
             Recipe details response
         """
         try:
+            # Generate cache key
+            cache_key = cache_service.generate_key(
+                "recipes:details",
+                request.recipe_name,
+                sorted(request.ingredients),
+                servings=request.servings,
+                cooking_time=request.cooking_time
+            )
+            
+            # Check cache
+            if self.cache.enabled:
+                cached_result = await self.cache.get(cache_key)
+                if cached_result:
+                    logger.info(f"Cache hit for recipe details: {cache_key[:50]}...")
+                    return RecipeDetailsResponse(**cached_result)
+            
             # Build prompt for recipe generation
             prompt = self._build_recipe_generation_prompt(request)
             
@@ -94,6 +138,11 @@ class RecipeService:
             
             # Parse response into recipe details
             recipe_details = self._parse_recipe_details_response(response_text, request)
+            
+            # Cache the result
+            if self.cache.enabled:
+                await self.cache.set(cache_key, recipe_details.dict(), ttl=self.details_cache_ttl)
+                logger.info(f"Cached recipe details: {cache_key[:50]}...")
             
             return recipe_details
             
@@ -106,7 +155,7 @@ class RecipeService:
         request: PersonalizedSuggestionRequest
     ) -> PersonalizedSuggestionResponse:
         """
-        Generate personalized recipe suggestions
+        Generate personalized recipe suggestions with caching
         
         Args:
             request: Personalized suggestion request
@@ -115,6 +164,26 @@ class RecipeService:
             Personalized suggestions response
         """
         try:
+            # Generate cache key (include user_id and history for personalization)
+            history_hash = hash(tuple((h.recipe_id, h.rating) for h in request.cooking_history[:5])) if request.cooking_history else None
+            prefs_hash = hash(str(request.preferences.dict() if request.preferences else {}))
+            
+            cache_key = cache_service.generate_key(
+                "recipes:personalized",
+                request.user_id,
+                sorted(request.ingredients),
+                history=history_hash,
+                preferences=prefs_hash,
+                max_results=request.max_results
+            )
+            
+            # Check cache (shorter TTL for personalized)
+            if self.cache.enabled:
+                cached_result = await self.cache.get(cache_key)
+                if cached_result:
+                    logger.info(f"Cache hit for personalized suggestions: {cache_key[:50]}...")
+                    return PersonalizedSuggestionResponse(**cached_result)
+            
             # Build personalized prompt
             prompt = self._build_personalized_prompt(request)
             
@@ -142,11 +211,18 @@ class RecipeService:
                 request.preferences
             )
             
-            return PersonalizedSuggestionResponse(
+            result = PersonalizedSuggestionResponse(
                 recipes=recipes,
                 personalization_score=personalization_score,
                 recommendation_reason=recommendation_reason
             )
+            
+            # Cache the result (shorter TTL for personalized)
+            if self.cache.enabled:
+                await self.cache.set(cache_key, result.dict(), ttl=self.personalized_cache_ttl)
+                logger.info(f"Cached personalized suggestions: {cache_key[:50]}...")
+            
+            return result
             
         except Exception as e:
             logger.error(f"Personalization failed: {str(e)}")

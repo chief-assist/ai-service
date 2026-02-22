@@ -110,8 +110,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Rate limiting middleware (optional, can be enabled)
-# app.add_middleware(RateLimitMiddleware)
+# Rate limiting middleware (enabled)
+app.add_middleware(RateLimitMiddleware)
 
 # Exception handlers
 app.add_exception_handler(RequestValidationError, validation_exception_handler)

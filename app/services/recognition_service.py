@@ -2,11 +2,13 @@
 Ingredient recognition service
 """
 import logging
+import hashlib
 from typing import List
 from fastapi import HTTPException
 from app.models.schemas import IngredientRecognitionRequest, IngredientRecognitionResponse, Ingredient
 from app.services.ollama_service import OllamaService
 from app.services.image_service import ImageService
+from app.services.cache_service import cache_service
 import time
 import json
 
@@ -20,10 +22,13 @@ class RecognitionService:
         """Initialize recognition service"""
         self.ollama_service = OllamaService()
         self.image_service = ImageService()
+        self.cache = cache_service
+        # Cache TTL: 7 days (same image = same ingredients)
+        self.cache_ttl = 7 * 24 * 3600
     
     async def recognize_ingredients(self, request: IngredientRecognitionRequest) -> IngredientRecognitionResponse:
         """
-        Recognize ingredients from image using Ollama AI
+        Recognize ingredients from image using Ollama AI with caching
         
         Args:
             request: Ingredient recognition request
@@ -34,6 +39,19 @@ class RecognitionService:
         start_time = time.time()
         
         try:
+            # Generate cache key from image
+            cache_key = self._generate_cache_key(request)
+            
+            # Check cache first
+            if self.cache.enabled:
+                cached_result = await self.cache.get(cache_key)
+                if cached_result:
+                    logger.info(f"Cache hit for ingredient recognition: {cache_key[:50]}...")
+                    # Add cache indicator to processing time
+                    cached_result["processing_time"] = round(time.time() - start_time, 2)
+                    cached_result["from_cache"] = True
+                    return IngredientRecognitionResponse(**cached_result)
+            
             # Get image data
             if request.image_url:
                 image_data = await self.image_service.download_image(str(request.image_url))
@@ -78,10 +96,19 @@ class RecognitionService:
             
             processing_time = time.time() - start_time
             
-            return IngredientRecognitionResponse(
+            result = IngredientRecognitionResponse(
                 ingredients=ingredients,
                 processing_time=round(processing_time, 2)
             )
+            
+            # Cache the result
+            if self.cache.enabled:
+                cache_data = result.dict()
+                cache_data["from_cache"] = False
+                await self.cache.set(cache_key, cache_data, ttl=self.cache_ttl)
+                logger.info(f"Cached ingredient recognition result: {cache_key[:50]}...")
+            
+            return result
             
         except TimeoutError as e:
             logger.error(f"Ingredient recognition timeout: {str(e)}")
@@ -190,3 +217,27 @@ class RecognitionService:
                     ))
         
         return ingredients[:10]  # Limit to 10 ingredients
+    
+    def _generate_cache_key(self, request: IngredientRecognitionRequest) -> str:
+        """
+        Generate cache key from request
+        
+        Args:
+            request: Ingredient recognition request
+            
+        Returns:
+            Cache key string
+        """
+        if request.image_url:
+            # Use URL as part of key (convert Pydantic Url to string)
+            url_str = str(request.image_url)
+            url_hash = hashlib.md5(url_str.encode()).hexdigest()
+            return cache_service.generate_key("ingredients", "url", url_hash)
+        elif request.image_base64:
+            # Use base64 hash (first 32 chars should be enough for uniqueness)
+            # Hash the full base64 to avoid storing large keys
+            base64_hash = hashlib.md5(request.image_base64.encode()).hexdigest()
+            return cache_service.generate_key("ingredients", "base64", base64_hash)
+        else:
+            # Fallback (shouldn't happen due to validation)
+            return cache_service.generate_key("ingredients", "unknown")
