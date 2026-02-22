@@ -5,7 +5,7 @@ import logging
 from typing import List
 from fastapi import HTTPException
 from app.models.schemas import IngredientRecognitionRequest, IngredientRecognitionResponse, Ingredient
-from app.services.gemini_service import GeminiService
+from app.services.ollama_service import OllamaService
 from app.services.image_service import ImageService
 import time
 import json
@@ -18,12 +18,12 @@ class RecognitionService:
     
     def __init__(self):
         """Initialize recognition service"""
-        self.gemini_service = GeminiService()
+        self.ollama_service = OllamaService()
         self.image_service = ImageService()
     
     async def recognize_ingredients(self, request: IngredientRecognitionRequest) -> IngredientRecognitionResponse:
         """
-        Recognize ingredients from image using Gemini AI
+        Recognize ingredients from image using Ollama AI
         
         Args:
             request: Ingredient recognition request
@@ -48,14 +48,14 @@ class RecognitionService:
             # Process image
             image = self.image_service.process_image(image_data, max_size=(1024, 1024))
             
-            # Convert image to bytes for Gemini
+            # Convert image to bytes for Ollama
             from io import BytesIO
             image_bytes = BytesIO()
             image.save(image_bytes, format='JPEG')
             image_bytes.seek(0)
             
             # Create prompt for ingredient recognition
-            prompt = """Identify all ingredients visible in this image. 
+            prompt = """Identify all food ingredients visible in this image. 
             Return a JSON array of ingredients with the following structure:
             [
                 {
@@ -67,8 +67,8 @@ class RecognitionService:
             ]
             Only include ingredients you can clearly identify. Be specific with ingredient names."""
             
-            # Use Gemini Vision for recognition
-            response_text = await self.gemini_service.generate_with_image(
+            # Use Ollama Vision for recognition
+            response_text = await self.ollama_service.generate_with_image(
                 prompt,
                 image_bytes.getvalue()
             )
@@ -123,17 +123,17 @@ class RecognitionService:
     
     def _parse_ingredients_response(self, response_text: str) -> List[Ingredient]:
         """
-        Parse Gemini response into ingredient list
+        Parse Ollama response into ingredient list
         
         Args:
-            response_text: Raw response from Gemini AI
+            response_text: Raw response from Ollama AI
         
         Returns:
             List of Ingredient objects
         """
         try:
             # Try to extract JSON from response
-            # Gemini might return text with JSON, so we need to extract it
+            # Ollama might return text with JSON, so we need to extract it
             import re
             
             # Look for JSON array in the response

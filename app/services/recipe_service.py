@@ -16,7 +16,7 @@ from app.models.schemas import (
     PersonalizedSuggestionResponse,
     CookingHistoryEntry,
 )
-from app.services.gemini_service import GeminiService
+from app.services.ollama_service import OllamaService
 import json
 import re
 
@@ -28,7 +28,7 @@ class RecipeService:
     
     def __init__(self):
         """Initialize recipe service"""
-        self.gemini_service = GeminiService()
+        self.ollama_service = OllamaService()
     
     async def suggest_recipes(
         self,
@@ -47,8 +47,8 @@ class RecipeService:
             # Build prompt for recipe suggestions
             prompt = self._build_suggestion_prompt(request)
             
-            # Generate recipes using Gemini
-            response_text = await self.gemini_service.generate_text(prompt)
+            # Generate recipes using Ollama
+            response_text = await self.ollama_service.generate_text(prompt)
             
             # Parse response into recipes
             recipes = self._parse_recipes_response(response_text, request.ingredients)
@@ -89,8 +89,8 @@ class RecipeService:
             # Build prompt for recipe generation
             prompt = self._build_recipe_generation_prompt(request)
             
-            # Generate recipe using Gemini
-            response_text = await self.gemini_service.generate_text(prompt)
+            # Generate recipe using Ollama
+            response_text = await self.ollama_service.generate_text(prompt)
             
             # Parse response into recipe details
             recipe_details = self._parse_recipe_details_response(response_text, request)
@@ -118,8 +118,8 @@ class RecipeService:
             # Build personalized prompt
             prompt = self._build_personalized_prompt(request)
             
-            # Generate recipes using Gemini
-            response_text = await self.gemini_service.generate_text(prompt)
+            # Generate recipes using Ollama
+            response_text = await self.ollama_service.generate_text(prompt)
             
             # Parse response
             recipes = self._parse_recipes_response(response_text, request.ingredients)
@@ -278,7 +278,7 @@ Return as JSON array of recipes (same format as regular suggestions).
         return prompt
     
     def _parse_recipes_response(self, response_text: str, available_ingredients: List[str]) -> List[Recipe]:
-        """Parse Gemini response into recipe list"""
+        """Parse Ollama response into recipe list"""
         try:
             # Extract JSON array from response
             json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
@@ -323,7 +323,7 @@ Return as JSON array of recipes (same format as regular suggestions).
         response_text: str,
         request: RecipeDetailsRequest
     ) -> RecipeDetailsResponse:
-        """Parse Gemini response into recipe details"""
+        """Parse Ollama response into recipe details"""
         try:
             # Extract JSON from response
             json_match = re.search(r'\{.*\}', response_text, re.DOTALL)

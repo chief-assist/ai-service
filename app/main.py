@@ -29,7 +29,7 @@ app = FastAPI(
     
     This service provides AI-powered capabilities for the ChefAssist application:
     
-    * **Ingredient Recognition**: Identify ingredients from images using Gemini Vision AI
+    * **Ingredient Recognition**: Identify ingredients from images using Ollama AI (local models)
     * **Recipe Suggestions**: Generate recipe recommendations based on available ingredients
     * **Recipe Generation**: Create detailed cooking instructions and steps
     * **Personalization**: Provide personalized recipe suggestions based on user history
@@ -135,8 +135,8 @@ async def root():
 @app.get(
     "/api/ai/health",
     summary="Health Check",
-    description="Check the health status of the AI service and Gemini AI availability",
-    response_description="Service health status and Gemini AI availability",
+    description="Check the health status of the AI service and Ollama AI availability",
+    response_description="Service health status and Ollama AI availability",
     tags=["Health"],
     responses={
         200: {
@@ -147,7 +147,7 @@ async def root():
                         "status": "healthy",
                         "service": "chefassist-ai",
                         "version": "1.0.0",
-                        "gemini_available": True
+                        "ollama_available": True
                     }
                 }
             }
@@ -158,15 +158,15 @@ async def health_check():
     """
     Health check endpoint.
     
-    Returns the current health status of the service and whether Gemini AI is
+    Returns the current health status of the service and whether Ollama AI is
     properly configured and available.
     """
-    from app.services.gemini_service import GeminiService
-    gemini_service = GeminiService()
+    from app.services.ollama_service import OllamaService
+    ollama_service = OllamaService()
     
     return {
         "status": "healthy",
         "service": settings.service_name,
         "version": settings.version,
-        "gemini_available": gemini_service.is_available()
+        "ollama_available": ollama_service.is_available()
     }

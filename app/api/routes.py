@@ -80,7 +80,7 @@ async def api_info():
     status_code=200,
     summary="Recognize Ingredients from Image",
     description="""
-    Recognize ingredients from uploaded images using Google Gemini Vision AI.
+    Recognize ingredients from uploaded images using Ollama AI (local vision models).
     
     **Features:**
     - Supports both image URLs and base64-encoded images
@@ -130,10 +130,11 @@ async def recognize_ingredients(
     api_key: str = Depends(verify_api_key)
 ):
     """
-    Recognize ingredients from uploaded images using Gemini AI.
+    Recognize ingredients from uploaded images using Ollama AI.
     
-    This endpoint uses Google Gemini Vision AI to analyze images and identify
+    This endpoint uses Ollama vision models (llava, bakllava, etc.) to analyze images and identify
     food ingredients. It supports both image URLs and base64-encoded images.
+    Requires Ollama server running locally or on a remote server.
     """
     try:
         result = await recognition_service.recognize_ingredients(request)

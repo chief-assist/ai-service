@@ -15,9 +15,9 @@ class Settings(BaseSettings):
     port: int = 8000
     environment: str = "development"
     
-    # Google Gemini AI
-    google_api_key: str = ""
-    google_generative_ai_api_key: str = ""
+    # Ollama AI (Local Models)
+    ollama_url: str = "http://localhost:11434"  # Ollama server URL
+    ollama_model: str = "llava"  # Vision model for ingredient recognition (llava, bakllava, moondream)
     
     # API Security
     api_key: str = ""
@@ -31,10 +31,9 @@ class Settings(BaseSettings):
     redis_password: str = ""
     redis_enabled: bool = False
     
-    # Gemini Model Configuration
-    gemini_model: str = "gemini-2.0-flash"
-    gemini_timeout: int = 120  # Timeout in seconds for Gemini API calls
-    gemini_max_retries: int = 3  # Maximum number of retry attempts
+    # Ollama Configuration
+    ollama_timeout: int = 180  # Timeout in seconds for Ollama API calls (longer for local models)
+    ollama_max_retries: int = 3  # Maximum number of retry attempts
     
     # Rate Limiting
     rate_limit_per_minute: int = 60
@@ -51,6 +50,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "ignore"  # Ignore extra fields in .env (like old Gemini settings)
 
 
 # Global settings instance
