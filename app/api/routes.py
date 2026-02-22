@@ -1,6 +1,7 @@
 """
 API route definitions
 """
+import logging
 from fastapi import APIRouter, HTTPException, Depends
 from app.models.schemas import (
     IngredientRecognitionRequest,
@@ -15,6 +16,8 @@ from app.models.schemas import (
 from app.middleware.auth import verify_api_key
 from app.services.recognition_service import RecognitionService
 from app.services.recipe_service import RecipeService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 

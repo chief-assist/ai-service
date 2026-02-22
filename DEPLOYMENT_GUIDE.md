@@ -18,7 +18,7 @@ Since you're in China and need to access DeepSeek API (not Google services), her
 **Deployment Steps:**
 ```bash
 # 1. Install Railway CLI
-npm i -g @railway/cli
+pnpm add -g @railway/cli
 
 # 2. Login
 railway login
