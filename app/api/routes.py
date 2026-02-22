@@ -139,8 +139,15 @@ async def recognize_ingredients(
     food ingredients. It supports both image URLs and base64-encoded images.
     Requires Ollama server running locally or on a remote server.
     """
+    logger.info(f"[ENDPOINT] /recognize-ingredients called")
+    logger.info(f"[ENDPOINT] Request data: image_url={'SET' if request.image_url else 'NOT SET'}, image_base64={'SET' if request.image_base64 else 'NOT SET'}")
+    if request.image_url:
+        # Convert Pydantic Url to string before slicing
+        image_url_str = str(request.image_url)
+        logger.info(f"[ENDPOINT] Image URL: {image_url_str[:100]}...")
     try:
         result = await recognition_service.recognize_ingredients(request)
+        logger.info(f"[ENDPOINT] Recognition successful: {len(result.ingredients)} ingredients found")
         return result
     except HTTPException:
         # Re-raise HTTP exceptions (they already have proper status codes)

@@ -21,6 +21,8 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
+logger = logging.getLogger(__name__)
+
 # Initialize FastAPI app with enhanced OpenAPI documentation
 app = FastAPI(
     title="ChefAssist AI Service",
@@ -100,6 +102,43 @@ def custom_openapi():
     return app.openapi_schema
 
 app.openapi = custom_openapi
+
+# Request logging middleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+import time
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        start_time = time.time()
+        
+        # Log incoming request
+        logger.info(f"[REQUEST] {request.method} {request.url.path}")
+        logger.info(f"[REQUEST] Query params: {dict(request.query_params)}")
+        
+        # Extract and log API key header (partial for security)
+        api_key_header = request.headers.get("X-API-Key")
+        if api_key_header:
+            api_key_preview = f"{api_key_header[:10]}...{api_key_header[-4:]}" if len(api_key_header) > 14 else api_key_header[:10] + "..."
+            logger.info(f"[REQUEST] ✅ X-API-Key header: {api_key_preview} (length: {len(api_key_header)})")
+        else:
+            logger.warning("[REQUEST] ⚠️  X-API-Key header is MISSING")
+        
+        # Log other important headers
+        content_type = request.headers.get("Content-Type", "N/A")
+        logger.info(f"[REQUEST] Content-Type: {content_type}")
+        logger.info(f"[REQUEST] All headers: {dict(request.headers)}")
+        
+        # Process request
+        response = await call_next(request)
+        
+        # Log response
+        process_time = time.time() - start_time
+        logger.info(f"[RESPONSE] {request.method} {request.url.path} - Status: {response.status_code} - Time: {process_time:.3f}s")
+        
+        return response
+
+app.add_middleware(RequestLoggingMiddleware)
 
 # CORS middleware
 app.add_middleware(

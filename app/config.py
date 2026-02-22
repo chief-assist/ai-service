@@ -32,8 +32,8 @@ class Settings(BaseSettings):
     redis_enabled: bool = False
     
     # Ollama Configuration
-    ollama_timeout: int = 180  # Timeout in seconds for Ollama API calls (longer for local models)
-    ollama_max_retries: int = 3  # Maximum number of retry attempts
+    ollama_timeout: int = 300  # Timeout in seconds for Ollama API calls (longer for local models - 5 minutes)
+    ollama_max_retries: int = 2  # Maximum number of retry attempts (reduced to fail faster if Ollama is down)
     
     # Rate Limiting
     rate_limit_per_minute: int = 60

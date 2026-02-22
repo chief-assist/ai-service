@@ -18,6 +18,7 @@ class ImageService:
     async def download_image(self, image_url: str) -> bytes:
         """
         Download image from URL with timeout and retry logic
+        Handles Cloudinary processing delays with initial wait and retries
         
         Args:
             image_url: URL of the image to download
@@ -27,28 +28,63 @@ class ImageService:
         """
         from app.config import settings
         
-        max_retries = 3
+        max_retries = 5  # Increased retries for Cloudinary
         timeout = settings.http_timeout
+        is_cloudinary = 'cloudinary.com' in image_url.lower()
+        
+        # If it's a Cloudinary URL, wait a bit first (image might still be processing)
+        if is_cloudinary:
+            initial_delay = 1.0  # 1 second initial delay for Cloudinary
+            logger.info(f"Cloudinary image detected, waiting {initial_delay}s before first download attempt...")
+            await asyncio.sleep(initial_delay)
         
         for attempt in range(max_retries):
             try:
+                logger.info(f"Downloading image (attempt {attempt + 1}/{max_retries}): {image_url[:80]}...")
                 async with httpx.AsyncClient(timeout=timeout) as client:
                     response = await client.get(image_url)
                     response.raise_for_status()
+                    logger.info(f"✅ Image downloaded successfully: {len(response.content)} bytes")
                     return response.content
+            except httpx.HTTPStatusError as e:
+                # Handle HTTP errors (404, 403, etc.)
+                status_code = e.response.status_code
+                if status_code == 404:
+                    # 404 might mean image isn't ready yet (Cloudinary processing)
+                    if is_cloudinary and attempt < max_retries - 1:
+                        wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s, 8s
+                        logger.warning(f"Image not found (404) - might still be processing. Waiting {wait_time}s before retry {attempt + 2}/{max_retries}...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    else:
+                        raise ValueError(f"Image not found at URL (404). The image might not be available yet or the URL is invalid.")
+                else:
+                    logger.error(f"HTTP error {status_code} downloading image: {str(e)}")
+                    if attempt == max_retries - 1:
+                        raise ValueError(f"Failed to download image: HTTP {status_code}")
+                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
             except httpx.TimeoutException:
-                logger.warning(f"Image download timeout (attempt {attempt + 1}/{max_retries}): {image_url}")
+                logger.warning(f"Image download timeout (attempt {attempt + 1}/{max_retries}): {image_url[:80]}...")
                 if attempt == max_retries - 1:
                     raise ValueError(f"Failed to download image: timeout after {timeout}s")
-                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                wait_time = 2 ** attempt
+                logger.info(f"Retrying in {wait_time}s...")
+                await asyncio.sleep(wait_time)  # Exponential backoff
             except httpx.RequestError as e:
                 logger.warning(f"Image download error (attempt {attempt + 1}/{max_retries}): {str(e)}")
                 if attempt == max_retries - 1:
                     raise ValueError(f"Failed to download image: {str(e)}")
-                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                wait_time = 2 ** attempt
+                logger.info(f"Retrying in {wait_time}s...")
+                await asyncio.sleep(wait_time)  # Exponential backoff
             except Exception as e:
-                logger.error(f"Failed to download image from {image_url}: {str(e)}")
-                raise ValueError(f"Failed to download image: {str(e)}")
+                logger.error(f"Unexpected error downloading image from {image_url[:80]}...: {str(e)}")
+                if attempt == max_retries - 1:
+                    raise ValueError(f"Failed to download image: {str(e)}")
+                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+        
+        # Should never reach here, but just in case
+        raise ValueError(f"Failed to download image after {max_retries} attempts")
     
     def decode_base64_image(self, image_base64: str) -> bytes:
         """

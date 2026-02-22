@@ -97,7 +97,10 @@ class RecipeService:
             return result
             
         except Exception as e:
-            logger.error(f"Recipe suggestion failed: {str(e)}")
+            import traceback
+            error_details = f"{type(e).__name__}: {str(e)}"
+            logger.error(f"Recipe suggestion failed: {error_details}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             raise
     
     async def generate_recipe_details(
