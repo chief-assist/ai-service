@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     api_key: str = ""
     
     # CORS - Can be set as comma-separated string in .env
-    allowed_origins: str = "http://localhost:5000,http://localhost:9002"
+    allowed_origins: str = "http://localhost:5000,http://localhost:9002,https://chef-assist-back.onrender.com"
     
     # Redis (optional, for caching)
     redis_host: str = "localhost"
