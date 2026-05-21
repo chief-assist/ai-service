@@ -111,7 +111,8 @@ class OllamaService:
                 # Use /api/generate for local Ollama (more stable and reliable)
                 # This endpoint works better with local models and handles long prompts better
                 logger.debug(f"Generating text with Ollama model '{self.model}' (attempt {attempt + 1}/{max_retries})")
-                
+            
+
                 response = await asyncio.wait_for(
                     self.client.post(
                         "/api/generate",
@@ -119,9 +120,11 @@ class OllamaService:
                             "model": self.model,
                             "prompt": prompt,
                             "stream": False,
+                            "format": "json",  # 🔥 CRITICAL FIX
                             "options": {
-                                "temperature": 0.7,
+                                "temperature": 0.2,  # Lower temp = more structured
                                 "top_p": 0.9,
+                                "num_predict": 2048,  # Prevent truncation
                                 **kwargs.get("options", {})
                             }
                         },

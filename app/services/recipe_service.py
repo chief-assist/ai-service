@@ -1,8 +1,545 @@
+# """
+# Recipe generation and suggestion service
+# """
+# import logging
+# from typing import List, Dict, Any
+# from app.models.schemas import (
+#     RecipeSuggestionRequest,
+#     RecipeSuggestionResponse,
+#     Recipe,
+#     RecipeDetailsRequest,
+#     RecipeDetailsResponse,
+#     RecipeIngredient,
+#     RecipeInstruction,
+#     NutritionInfo,
+#     PersonalizedSuggestionRequest,
+#     PersonalizedSuggestionResponse,
+#     CookingHistoryEntry,
+# )
+# from app.services.ollama_service import OllamaService
+# from app.services.cache_service import cache_service
+# import json
+# import re
+
+# logger = logging.getLogger(__name__)
+
+
+# class RecipeService:
+#     """Service for recipe generation and suggestions"""
+    
+#     def __init__(self):
+#         """Initialize recipe service"""
+#         self.ollama_service = OllamaService()
+#         self.cache = cache_service
+#         # Cache TTL: 24 hours (recipes don't change often)
+#         self.suggestion_cache_ttl = 24 * 3600
+#         self.details_cache_ttl = 24 * 3600
+#         self.personalized_cache_ttl = 1 * 3600  # 1 hour (personalized changes more)
+    
+    # async def suggest_recipes(
+    #     self,
+    #     request: RecipeSuggestionRequest
+    # ) -> RecipeSuggestionResponse:
+    #     """
+    #     Generate recipe suggestions based on ingredients with caching
+        
+    #     Args:
+    #         request: Recipe suggestion request
+        
+    #     Returns:
+    #         Recipe suggestions response
+    #     """
+    #     try:
+    #         # Generate cache key
+    #         cache_key = cache_service.generate_key(
+    #             "recipes:suggest",
+    #             sorted(request.ingredients),
+    #             filters=request.filters.dict() if request.filters else None,
+    #             max_results=request.max_results
+    #         )
+            
+    #         # Check cache
+    #         if self.cache.enabled:
+    #             cached_result = await self.cache.get(cache_key)
+    #             if cached_result:
+    #                 logger.info(f"Cache hit for recipe suggestions: {cache_key[:50]}...")
+    #                 return RecipeSuggestionResponse(**cached_result)
+            
+    #         # Build prompt for recipe suggestions
+    #         prompt = self._build_suggestion_prompt(request)
+            
+    #         # Generate recipes using Ollama
+    #         response_text = await self.ollama_service.generate_text(prompt)
+            
+    #         # Parse response into recipes
+    #         recipes = self._parse_recipes_response(response_text, request.ingredients)
+            
+    #         # Apply filters if provided
+    #         if request.filters:
+    #             recipes = self._apply_filters(recipes, request.filters)
+            
+    #         # Sort by match percentage (ingredient completeness)
+    #         recipes.sort(key=lambda r: r.match_percentage, reverse=True)
+            
+    #         # Limit results
+    #         recipes = recipes[:request.max_results]
+            
+    #         result = RecipeSuggestionResponse(
+    #             recipes=recipes,
+    #             total_results=len(recipes)
+    #         )
+            
+    #         # Cache the result
+    #         if self.cache.enabled:
+    #             await self.cache.set(cache_key, result.dict(), ttl=self.suggestion_cache_ttl)
+    #             logger.info(f"Cached recipe suggestions: {cache_key[:50]}...")
+            
+    #         return result
+            
+    #     except Exception as e:
+    #         import traceback
+    #         error_details = f"{type(e).__name__}: {str(e)}"
+    #         logger.error(f"Recipe suggestion failed: {error_details}")
+    #         logger.error(f"Traceback: {traceback.format_exc()}")
+    #         raise
+    
+#     async def generate_recipe_details(
+#         self,
+#         request: RecipeDetailsRequest
+#     ) -> RecipeDetailsResponse:
+#         """
+#         Generate detailed recipe instructions with caching
+        
+#         Args:
+#             request: Recipe details request
+        
+#         Returns:
+#             Recipe details response
+#         """
+#         try:
+#             # Generate cache key
+#             cache_key = cache_service.generate_key(
+#                 "recipes:details",
+#                 request.recipe_name,
+#                 sorted(request.ingredients),
+#                 servings=request.servings,
+#                 cooking_time=request.cooking_time
+#             )
+            
+#             # Check cache
+#             if self.cache.enabled:
+#                 cached_result = await self.cache.get(cache_key)
+#                 if cached_result:
+#                     logger.info(f"Cache hit for recipe details: {cache_key[:50]}...")
+#                     return RecipeDetailsResponse(**cached_result)
+            
+#             # Build prompt for recipe generation
+#             prompt = self._build_recipe_generation_prompt(request)
+            
+#             # Generate recipe using Ollama
+#             response_text = await self.ollama_service.generate_text(prompt)
+            
+#             # Parse response into recipe details
+#             recipe_details = self._parse_recipe_details_response(response_text, request)
+            
+#             # Cache the result
+#             if self.cache.enabled:
+#                 await self.cache.set(cache_key, recipe_details.dict(), ttl=self.details_cache_ttl)
+#                 logger.info(f"Cached recipe details: {cache_key[:50]}...")
+            
+#             return recipe_details
+            
+#         except Exception as e:
+#             logger.error(f"Recipe generation failed: {str(e)}")
+#             raise
+    
+#     async def personalize_suggestions(
+#         self,
+#         request: PersonalizedSuggestionRequest
+#     ) -> PersonalizedSuggestionResponse:
+#         """
+#         Generate personalized recipe suggestions with caching
+        
+#         Args:
+#             request: Personalized suggestion request
+        
+#         Returns:
+#             Personalized suggestions response
+#         """
+#         try:
+#             # Generate cache key (include user_id and history for personalization)
+#             history_hash = hash(tuple((h.recipe_id, h.rating) for h in request.cooking_history[:5])) if request.cooking_history else None
+#             prefs_hash = hash(str(request.preferences.dict() if request.preferences else {}))
+            
+#             cache_key = cache_service.generate_key(
+#                 "recipes:personalized",
+#                 request.user_id,
+#                 sorted(request.ingredients),
+#                 history=history_hash,
+#                 preferences=prefs_hash,
+#                 max_results=request.max_results
+#             )
+            
+#             # Check cache (shorter TTL for personalized)
+#             if self.cache.enabled:
+#                 cached_result = await self.cache.get(cache_key)
+#                 if cached_result:
+#                     logger.info(f"Cache hit for personalized suggestions: {cache_key[:50]}...")
+#                     return PersonalizedSuggestionResponse(**cached_result)
+            
+#             # Build personalized prompt
+#             prompt = self._build_personalized_prompt(request)
+            
+#             # Generate recipes using Ollama
+#             response_text = await self.ollama_service.generate_text(prompt)
+            
+#             # Parse response
+#             recipes = self._parse_recipes_response(response_text, request.ingredients)
+            
+#             # Calculate personalization score based on history and preferences
+#             personalization_score = self._calculate_personalization_score(
+#                 recipes,
+#                 request.cooking_history,
+#                 request.preferences
+#             )
+            
+#             # Sort by personalization
+#             recipes.sort(key=lambda r: r.match_percentage, reverse=True)
+#             recipes = recipes[:request.max_results]
+            
+#             # Generate recommendation reason
+#             recommendation_reason = self._generate_recommendation_reason(
+#                 recipes,
+#                 request.cooking_history,
+#                 request.preferences
+#             )
+            
+#             result = PersonalizedSuggestionResponse(
+#                 recipes=recipes,
+#                 personalization_score=personalization_score,
+#                 recommendation_reason=recommendation_reason
+#             )
+            
+#             # Cache the result (shorter TTL for personalized)
+#             if self.cache.enabled:
+#                 await self.cache.set(cache_key, result.dict(), ttl=self.personalized_cache_ttl)
+#                 logger.info(f"Cached personalized suggestions: {cache_key[:50]}...")
+            
+#             return result
+            
+#         except Exception as e:
+#             logger.error(f"Personalization failed: {str(e)}")
+#             raise
+    
+#     def _build_suggestion_prompt(self, request: RecipeSuggestionRequest) -> str:
+#         """Build prompt for recipe suggestions"""
+#         ingredients_str = ', '.join(request.ingredients)
+        
+#         prompt = f"""Generate {request.max_results} recipe suggestions using these ingredients: {ingredients_str}
+
+# For each recipe, provide:
+# - name: Recipe name
+# - description: Brief description
+# - ingredients_required: List of all required ingredients
+# - ingredients_missing: Ingredients not in the provided list
+# - match_percentage: Percentage of required ingredients that are available (0-100)
+# - cooking_time: Cooking time in minutes
+# - difficulty: beginner, intermediate, or advanced
+# - cuisine: Cuisine type
+# - dietary_info: List of dietary tags (vegetarian, vegan, gluten-free, etc.)
+
+# """
+        
+#         if request.filters:
+#             if request.filters.dietary_restrictions:
+#                 prompt += f"Dietary restrictions: {', '.join(request.filters.dietary_restrictions)}\n"
+#             if request.filters.cuisine:
+#                 prompt += f"Cuisine preference: {request.filters.cuisine}\n"
+#             if request.filters.cooking_time:
+#                 prompt += f"Maximum cooking time: {request.filters.cooking_time} minutes\n"
+#             if request.filters.difficulty:
+#                 prompt += f"Difficulty level: {request.filters.difficulty}\n"
+        
+#         prompt += """
+# Return the response as a JSON array of recipes:
+# [
+#     {
+#         "id": "recipe_1",
+#         "name": "Recipe Name",
+#         "description": "Recipe description",
+#         "ingredients_required": ["ingredient1", "ingredient2"],
+#         "ingredients_missing": [],
+#         "match_percentage": 100,
+#         "cooking_time": 30,
+#         "difficulty": "beginner",
+#         "cuisine": "italian",
+#         "dietary_info": ["vegetarian"]
+#     }
+# ]
+# """
+#         return prompt
+    
+#     def _build_recipe_generation_prompt(self, request: RecipeDetailsRequest) -> str:
+#         """Build prompt for recipe generation"""
+#         ingredients_str = ', '.join(request.ingredients)
+        
+#         prompt = f"""Generate a detailed recipe for: {request.recipe_name}
+
+# Available ingredients: {ingredients_str}
+# Servings: {request.servings}
+# """
+        
+#         if request.cooking_time:
+#             prompt += f"Target cooking time: {request.cooking_time} minutes\n"
+        
+#         prompt += """
+# Provide a complete recipe with:
+# - description: Detailed recipe description
+# - ingredients: List with quantities and units
+# - instructions: Step-by-step cooking instructions with step numbers
+# - prep_time: Preparation time in minutes
+# - cooking_time: Cooking time in minutes
+# - total_time: Total time (prep + cooking)
+# - difficulty: beginner, intermediate, or advanced
+# - nutrition: Estimated nutritional information (calories, protein, carbs, fat)
+
+# Return as JSON:
+# {
+#     "description": "...",
+#     "ingredients": [
+#         {"name": "ingredient", "quantity": "amount", "unit": "unit"}
+#     ],
+#     "instructions": [
+#         {"step": 1, "description": "...", "duration": 5}
+#     ],
+#     "prep_time": 10,
+#     "cooking_time": 25,
+#     "total_time": 35,
+#     "difficulty": "beginner",
+#     "nutrition": {
+#         "calories": 350,
+#         "protein": 12,
+#         "carbs": 65,
+#         "fat": 8
+#     }
+# }
+# """
+#         return prompt
+    
+#     def _build_personalized_prompt(self, request: PersonalizedSuggestionRequest) -> str:
+#         """Build prompt for personalized suggestions"""
+#         ingredients_str = ', '.join(request.ingredients)
+        
+#         prompt = f"""Generate personalized recipe suggestions using these ingredients: {ingredients_str}
+
+# User Context:
+# """
+        
+#         if request.cooking_history:
+#             prompt += "Cooking History:\n"
+#             for entry in request.cooking_history[:5]:  # Last 5 recipes
+#                 prompt += f"- Recipe {entry.recipe_id}: Rating {entry.rating}/5\n"
+        
+#         if request.preferences:
+#             if request.preferences.dietary_restrictions:
+#                 prompt += f"Dietary restrictions: {', '.join(request.preferences.dietary_restrictions)}\n"
+#             if request.preferences.cuisine_preferences:
+#                 prompt += f"Preferred cuisines: {', '.join(request.preferences.cuisine_preferences)}\n"
+#             if request.preferences.spice_level:
+#                 prompt += f"Spice level preference: {request.preferences.spice_level}\n"
+        
+#         prompt += """
+# Generate recipes that match the user's preferences and cooking history.
+# Prioritize recipes similar to highly-rated dishes in their history.
+
+# Return as JSON array of recipes (same format as regular suggestions).
+# """
+#         return prompt
+    
+#     def _parse_recipes_response(self, response_text: str, available_ingredients: List[str]) -> List[Recipe]:
+#         """Parse Ollama response into recipe list"""
+#         try:
+#             # Extract JSON array from response
+#             json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
+#             if json_match:
+#                 json_str = json_match.group(0)
+#                 recipes_data = json.loads(json_str)
+#             else:
+#                 recipes_data = json.loads(response_text)
+            
+#             recipes = []
+#             for idx, item in enumerate(recipes_data):
+#                 # Calculate match percentage
+#                 required = item.get('ingredients_required', [])
+#                 missing = item.get('ingredients_missing', [])
+#                 if required:
+#                     match_pct = ((len(required) - len(missing)) / len(required)) * 100
+#                 else:
+#                     match_pct = 0.0
+                
+#                 recipes.append(Recipe(
+#                     id=item.get('id', f'recipe_{idx}'),
+#                     name=item.get('name', 'Unknown Recipe'),
+#                     description=item.get('description', ''),
+#                     ingredients_required=required,
+#                     ingredients_missing=missing,
+#                     match_percentage=match_pct,
+#                     cooking_time=item.get('cooking_time', 30),
+#                     difficulty=item.get('difficulty', 'beginner'),
+#                     cuisine=item.get('cuisine'),
+#                     dietary_info=item.get('dietary_info', []),
+#                     image_url=item.get('image_url')
+#                 ))
+            
+#             return recipes
+            
+#         except (json.JSONDecodeError, KeyError) as e:
+#             logger.error(f"Failed to parse recipes response: {str(e)}")
+#             raise ValueError("Invalid recipe response format")
+    
+#     def _parse_recipe_details_response(
+#         self,
+#         response_text: str,
+#         request: RecipeDetailsRequest
+#     ) -> RecipeDetailsResponse:
+#         """Parse Ollama response into recipe details"""
+#         try:
+#             # Extract JSON from response
+#             json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+#             if json_match:
+#                 json_str = json_match.group(0)
+#                 recipe_data = json.loads(json_str)
+#             else:
+#                 recipe_data = json.loads(response_text)
+            
+#             # Parse ingredients
+#             ingredients = []
+#             for ing in recipe_data.get('ingredients', []):
+#                 ingredients.append(RecipeIngredient(
+#                     name=ing.get('name', ''),
+#                     quantity=ing.get('quantity', ''),
+#                     unit=ing.get('unit', '')
+#                 ))
+            
+#             # Parse instructions
+#             instructions = []
+#             for inst in recipe_data.get('instructions', []):
+#                 instructions.append(RecipeInstruction(
+#                     step=inst.get('step', len(instructions) + 1),
+#                     description=inst.get('description', ''),
+#                     duration=inst.get('duration')
+#                 ))
+            
+#             # Parse nutrition
+#             nutrition_data = recipe_data.get('nutrition', {})
+#             nutrition = None
+#             if nutrition_data:
+#                 nutrition = NutritionInfo(
+#                     calories=nutrition_data.get('calories'),
+#                     protein=nutrition_data.get('protein'),
+#                     carbs=nutrition_data.get('carbs'),
+#                     fat=nutrition_data.get('fat')
+#                 )
+            
+#             return RecipeDetailsResponse(
+#                 recipe_id=f"recipe_{hash(request.recipe_name)}",
+#                 name=request.recipe_name,
+#                 description=recipe_data.get('description', ''),
+#                 ingredients=ingredients,
+#                 instructions=instructions,
+#                 cooking_time=recipe_data.get('cooking_time', request.cooking_time or 30),
+#                 prep_time=recipe_data.get('prep_time', 10),
+#                 total_time=recipe_data.get('total_time', recipe_data.get('prep_time', 10) + recipe_data.get('cooking_time', 30)),
+#                 servings=request.servings,
+#                 difficulty=recipe_data.get('difficulty', 'beginner'),
+#                 nutrition=nutrition
+#             )
+            
+#         except (json.JSONDecodeError, KeyError) as e:
+#             logger.error(f"Failed to parse recipe details: {str(e)}")
+#             raise ValueError("Invalid recipe details format")
+    
+#     def _apply_filters(self, recipes: List[Recipe], filters) -> List[Recipe]:
+#         """Apply filters to recipe list"""
+#         filtered = recipes.copy()
+        
+#         if filters.dietary_restrictions:
+#             filtered = [r for r in filtered if any(
+#                 diet in r.dietary_info for diet in filters.dietary_restrictions
+#             )]
+        
+#         if filters.cuisine:
+#             filtered = [r for r in filtered if r.cuisine == filters.cuisine]
+        
+#         if filters.cooking_time:
+#             filtered = [r for r in filtered if r.cooking_time <= filters.cooking_time]
+        
+#         if filters.difficulty:
+#             filtered = [r for r in filtered if r.difficulty == filters.difficulty]
+        
+#         if filters.exclude_ingredients:
+#             filtered = [r for r in filtered if not any(
+#                 ing in r.ingredients_required for ing in filters.exclude_ingredients
+#             )]
+        
+#         return filtered
+    
+#     def _calculate_personalization_score(
+#         self,
+#         recipes: List[Recipe],
+#         history: List[CookingHistoryEntry],
+#         preferences
+#     ) -> float:
+#         """Calculate personalization score"""
+#         if not history and not preferences:
+#             return 0.5  # Neutral score
+        
+#         # Simple scoring based on history ratings
+#         if history:
+#             avg_rating = sum(h.rating for h in history) / len(history)
+#             return min(avg_rating / 5.0, 1.0)
+        
+#         return 0.7  # Default score
+    
+#     def _generate_recommendation_reason(
+#         self,
+#         recipes: List[Recipe],
+#         history: List[CookingHistoryEntry],
+#         preferences
+#     ) -> str:
+#         """Generate recommendation reason"""
+#         reasons = []
+        
+#         if preferences and preferences.cuisine_preferences:
+#             reasons.append(f"Based on your preference for {', '.join(preferences.cuisine_preferences)} cuisine")
+        
+#         if history:
+#             high_rated = [h for h in history if h.rating >= 4]
+#             if high_rated:
+#                 reasons.append("similar to recipes you've highly rated")
+        
+#         if not reasons:
+#             return "Based on your available ingredients and preferences"
+        
+#         return ", ".join(reasons) + "."
+
+
+
 """
 Recipe generation and suggestion service
 """
+
 import logging
-from typing import List, Dict, Any
+from typing import List
+import json
+import re
+
+try:
+    from json_repair import repair_json
+    JSON_REPAIR_AVAILABLE = True
+except ImportError:
+    JSON_REPAIR_AVAILABLE = False
+
 from app.models.schemas import (
     RecipeSuggestionRequest,
     RecipeSuggestionResponse,
@@ -16,26 +553,85 @@ from app.models.schemas import (
     PersonalizedSuggestionResponse,
     CookingHistoryEntry,
 )
+
 from app.services.ollama_service import OllamaService
 from app.services.cache_service import cache_service
-import json
-import re
 
 logger = logging.getLogger(__name__)
 
 
 class RecipeService:
     """Service for recipe generation and suggestions"""
-    
+
     def __init__(self):
-        """Initialize recipe service"""
         self.ollama_service = OllamaService()
         self.cache = cache_service
-        # Cache TTL: 24 hours (recipes don't change often)
+
         self.suggestion_cache_ttl = 24 * 3600
         self.details_cache_ttl = 24 * 3600
-        self.personalized_cache_ttl = 1 * 3600  # 1 hour (personalized changes more)
-    
+        self.personalized_cache_ttl = 3600
+
+    # ==========================================================
+    # PUBLIC METHODS
+    # ==========================================================
+
+    def _parse_recipes_response(
+        self,
+        response_text: str,
+        available_ingredients: List[str]
+    ) -> List[Recipe]:
+
+        try:
+            data = json.loads(response_text)
+
+            # ✅ Case 1: wrapped object
+            if isinstance(data, dict) and "recipes" in data:
+                data = data["recipes"]
+
+            # ✅ Case 2: single recipe object → convert to list
+            elif isinstance(data, dict):
+                data = [data]
+
+            # ❌ Not valid
+            if not isinstance(data, list):
+                raise ValueError("AI response was not a list or valid recipe object")
+
+            recipes = []
+
+            for idx, item in enumerate(data):
+                required = item.get("ingredients_required", [])
+                missing = item.get("ingredients_missing", [])
+
+                if required:
+                    match_pct = ((len(required) - len(missing)) / len(required)) * 100
+                else:
+                    match_pct = 0.0
+
+                recipes.append(
+                    Recipe(
+                        id=item.get("id", f"recipe_{idx}"),
+                        name=item.get("name", "Unknown"),
+                        description=item.get("description", ""),
+                        ingredients_required=required,
+                        ingredients_missing=missing,
+                        match_percentage=match_pct,
+                        cooking_time=item.get("cooking_time", 30),
+                        difficulty=item.get("difficulty", "beginner"),
+                        cuisine=item.get("cuisine"),
+                        dietary_info=item.get("dietary_info", []),
+                        image_url=item.get("image_url"),
+                    )
+                )
+
+            return recipes
+
+        except Exception:
+            logger.error("Failed to parse recipes response")
+            logger.error("Raw response:")
+            logger.error(response_text)
+            raise ValueError("Invalid recipe response format")
+
+    cur
     async def suggest_recipes(
         self,
         request: RecipeSuggestionRequest
@@ -102,423 +698,313 @@ class RecipeService:
             logger.error(f"Recipe suggestion failed: {error_details}")
             logger.error(f"Traceback: {traceback.format_exc()}")
             raise
-    
+
+
     async def generate_recipe_details(
         self,
         request: RecipeDetailsRequest
     ) -> RecipeDetailsResponse:
-        """
-        Generate detailed recipe instructions with caching
-        
-        Args:
-            request: Recipe details request
-        
-        Returns:
-            Recipe details response
-        """
-        try:
-            # Generate cache key
-            cache_key = cache_service.generate_key(
-                "recipes:details",
-                request.recipe_name,
-                sorted(request.ingredients),
-                servings=request.servings,
-                cooking_time=request.cooking_time
-            )
-            
-            # Check cache
-            if self.cache.enabled:
-                cached_result = await self.cache.get(cache_key)
-                if cached_result:
-                    logger.info(f"Cache hit for recipe details: {cache_key[:50]}...")
-                    return RecipeDetailsResponse(**cached_result)
-            
-            # Build prompt for recipe generation
-            prompt = self._build_recipe_generation_prompt(request)
-            
-            # Generate recipe using Ollama
-            response_text = await self.ollama_service.generate_text(prompt)
-            
-            # Parse response into recipe details
-            recipe_details = self._parse_recipe_details_response(response_text, request)
-            
-            # Cache the result
-            if self.cache.enabled:
-                await self.cache.set(cache_key, recipe_details.dict(), ttl=self.details_cache_ttl)
-                logger.info(f"Cached recipe details: {cache_key[:50]}...")
-            
-            return recipe_details
-            
-        except Exception as e:
-            logger.error(f"Recipe generation failed: {str(e)}")
-            raise
-    
+
+        cache_key = cache_service.generate_key(
+            "recipes:details",
+            request.recipe_name,
+            sorted(request.ingredients),
+            servings=request.servings,
+            cooking_time=request.cooking_time
+        )
+
+        if self.cache.enabled:
+            cached = await self.cache.get(cache_key)
+            if cached:
+                return RecipeDetailsResponse(**cached)
+
+        prompt = self._build_recipe_generation_prompt(request)
+        response_text = await self.ollama_service.generate_text(prompt)
+
+        recipe_details = self._parse_recipe_details_response(response_text, request)
+
+        if self.cache.enabled:
+            await self.cache.set(cache_key, recipe_details.dict(), ttl=self.details_cache_ttl)
+
+        return recipe_details
+
     async def personalize_suggestions(
         self,
         request: PersonalizedSuggestionRequest
     ) -> PersonalizedSuggestionResponse:
-        """
-        Generate personalized recipe suggestions with caching
-        
-        Args:
-            request: Personalized suggestion request
-        
-        Returns:
-            Personalized suggestions response
-        """
-        try:
-            # Generate cache key (include user_id and history for personalization)
-            history_hash = hash(tuple((h.recipe_id, h.rating) for h in request.cooking_history[:5])) if request.cooking_history else None
-            prefs_hash = hash(str(request.preferences.dict() if request.preferences else {}))
-            
-            cache_key = cache_service.generate_key(
-                "recipes:personalized",
-                request.user_id,
-                sorted(request.ingredients),
-                history=history_hash,
-                preferences=prefs_hash,
-                max_results=request.max_results
-            )
-            
-            # Check cache (shorter TTL for personalized)
-            if self.cache.enabled:
-                cached_result = await self.cache.get(cache_key)
-                if cached_result:
-                    logger.info(f"Cache hit for personalized suggestions: {cache_key[:50]}...")
-                    return PersonalizedSuggestionResponse(**cached_result)
-            
-            # Build personalized prompt
-            prompt = self._build_personalized_prompt(request)
-            
-            # Generate recipes using Ollama
-            response_text = await self.ollama_service.generate_text(prompt)
-            
-            # Parse response
-            recipes = self._parse_recipes_response(response_text, request.ingredients)
-            
-            # Calculate personalization score based on history and preferences
-            personalization_score = self._calculate_personalization_score(
-                recipes,
-                request.cooking_history,
-                request.preferences
-            )
-            
-            # Sort by personalization
-            recipes.sort(key=lambda r: r.match_percentage, reverse=True)
-            recipes = recipes[:request.max_results]
-            
-            # Generate recommendation reason
-            recommendation_reason = self._generate_recommendation_reason(
-                recipes,
-                request.cooking_history,
-                request.preferences
-            )
-            
-            result = PersonalizedSuggestionResponse(
-                recipes=recipes,
-                personalization_score=personalization_score,
-                recommendation_reason=recommendation_reason
-            )
-            
-            # Cache the result (shorter TTL for personalized)
-            if self.cache.enabled:
-                await self.cache.set(cache_key, result.dict(), ttl=self.personalized_cache_ttl)
-                logger.info(f"Cached personalized suggestions: {cache_key[:50]}...")
-            
-            return result
-            
-        except Exception as e:
-            logger.error(f"Personalization failed: {str(e)}")
-            raise
-    
+
+        cache_key = cache_service.generate_key(
+            "recipes:personalized",
+            request.user_id,
+            sorted(request.ingredients),
+            max_results=request.max_results
+        )
+
+        if self.cache.enabled:
+            cached = await self.cache.get(cache_key)
+            if cached:
+                return PersonalizedSuggestionResponse(**cached)
+
+        prompt = self._build_personalized_prompt(request)
+        response_text = await self.ollama_service.generate_text(prompt)
+
+        recipes = self._parse_recipes_response(response_text, request.ingredients)
+
+        recipes.sort(key=lambda r: r.match_percentage, reverse=True)
+        recipes = recipes[:request.max_results]
+
+        result = PersonalizedSuggestionResponse(
+            recipes=recipes,
+            personalization_score=0.8,
+            recommendation_reason="Based on your preferences and ingredients."
+        )
+
+        if self.cache.enabled:
+            await self.cache.set(cache_key, result.dict(), ttl=self.personalized_cache_ttl)
+
+        return result
+
+    # ==========================================================
+    # PROMPTS
+    # ==========================================================
+
     def _build_suggestion_prompt(self, request: RecipeSuggestionRequest) -> str:
-        """Build prompt for recipe suggestions"""
-        ingredients_str = ', '.join(request.ingredients)
-        
-        prompt = f"""Generate {request.max_results} recipe suggestions using these ingredients: {ingredients_str}
+        ingredients_str = ", ".join(request.ingredients)
 
-For each recipe, provide:
-- name: Recipe name
-- description: Brief description
-- ingredients_required: List of all required ingredients
-- ingredients_missing: Ingredients not in the provided list
-- match_percentage: Percentage of required ingredients that are available (0-100)
-- cooking_time: Cooking time in minutes
-- difficulty: beginner, intermediate, or advanced
-- cuisine: Cuisine type
-- dietary_info: List of dietary tags (vegetarian, vegan, gluten-free, etc.)
+        return f"""
+Generate {request.max_results} recipe suggestions using these ingredients: {ingredients_str}
 
-"""
-        
-        if request.filters:
-            if request.filters.dietary_restrictions:
-                prompt += f"Dietary restrictions: {', '.join(request.filters.dietary_restrictions)}\n"
-            if request.filters.cuisine:
-                prompt += f"Cuisine preference: {request.filters.cuisine}\n"
-            if request.filters.cooking_time:
-                prompt += f"Maximum cooking time: {request.filters.cooking_time} minutes\n"
-            if request.filters.difficulty:
-                prompt += f"Difficulty level: {request.filters.difficulty}\n"
-        
-        prompt += """
-Return the response as a JSON array of recipes:
+Return ONLY valid JSON.
+Do NOT include markdown.
+Do NOT include explanations.
+Ensure:
+- Double quotes only
+- No trailing commas
+- Valid JSON array format
+
 [
-    {
-        "id": "recipe_1",
-        "name": "Recipe Name",
-        "description": "Recipe description",
-        "ingredients_required": ["ingredient1", "ingredient2"],
-        "ingredients_missing": [],
-        "match_percentage": 100,
-        "cooking_time": 30,
-        "difficulty": "beginner",
-        "cuisine": "italian",
-        "dietary_info": ["vegetarian"]
-    }
+  {{
+    "id": "recipe_1",
+    "name": "Recipe Name",
+    "description": "Short description",
+    "ingredients_required": ["item1"],
+    "ingredients_missing": [],
+    "match_percentage": 100,
+    "cooking_time": 30,
+    "difficulty": "beginner",
+    "cuisine": "italian",
+    "dietary_info": ["vegetarian"]
+  }}
 ]
 """
-        return prompt
-    
-    def _build_recipe_generation_prompt(self, request: RecipeDetailsRequest) -> str:
-        """Build prompt for recipe generation"""
-        ingredients_str = ', '.join(request.ingredients)
-        
-        prompt = f"""Generate a detailed recipe for: {request.recipe_name}
 
+    def _build_recipe_generation_prompt(self, request: RecipeDetailsRequest) -> str:
+        ingredients_str = ", ".join(request.ingredients)
+
+        return f"""
+Generate detailed recipe for: {request.recipe_name}
 Available ingredients: {ingredients_str}
 Servings: {request.servings}
-"""
-        
-        if request.cooking_time:
-            prompt += f"Target cooking time: {request.cooking_time} minutes\n"
-        
-        prompt += """
-Provide a complete recipe with:
-- description: Detailed recipe description
-- ingredients: List with quantities and units
-- instructions: Step-by-step cooking instructions with step numbers
-- prep_time: Preparation time in minutes
-- cooking_time: Cooking time in minutes
-- total_time: Total time (prep + cooking)
-- difficulty: beginner, intermediate, or advanced
-- nutrition: Estimated nutritional information (calories, protein, carbs, fat)
 
-Return as JSON:
-{
-    "description": "...",
-    "ingredients": [
-        {"name": "ingredient", "quantity": "amount", "unit": "unit"}
-    ],
-    "instructions": [
-        {"step": 1, "description": "...", "duration": 5}
-    ],
-    "prep_time": 10,
-    "cooking_time": 25,
-    "total_time": 35,
-    "difficulty": "beginner",
-    "nutrition": {
-        "calories": 350,
-        "protein": 12,
-        "carbs": 65,
-        "fat": 8
-    }
-}
+Return ONLY valid JSON object.
+No markdown.
+No explanation.
+
+{{
+  "description": "...",
+  "ingredients": [
+    {{"name": "ingredient", "quantity": "amount", "unit": "unit"}}
+  ],
+  "instructions": [
+    {{"step": 1, "description": "...", "duration": 5}}
+  ],
+  "prep_time": 10,
+  "cooking_time": 20,
+  "total_time": 30,
+  "difficulty": "beginner",
+  "nutrition": {{
+    "calories": 300,
+    "protein": 10,
+    "carbs": 40,
+    "fat": 5
+  }}
+}}
 """
-        return prompt
-    
+
     def _build_personalized_prompt(self, request: PersonalizedSuggestionRequest) -> str:
-        """Build prompt for personalized suggestions"""
-        ingredients_str = ', '.join(request.ingredients)
-        
-        prompt = f"""Generate personalized recipe suggestions using these ingredients: {ingredients_str}
+        ingredients_str = ", ".join(request.ingredients)
 
-User Context:
-"""
-        
-        if request.cooking_history:
-            prompt += "Cooking History:\n"
-            for entry in request.cooking_history[:5]:  # Last 5 recipes
-                prompt += f"- Recipe {entry.recipe_id}: Rating {entry.rating}/5\n"
-        
-        if request.preferences:
-            if request.preferences.dietary_restrictions:
-                prompt += f"Dietary restrictions: {', '.join(request.preferences.dietary_restrictions)}\n"
-            if request.preferences.cuisine_preferences:
-                prompt += f"Preferred cuisines: {', '.join(request.preferences.cuisine_preferences)}\n"
-            if request.preferences.spice_level:
-                prompt += f"Spice level preference: {request.preferences.spice_level}\n"
-        
-        prompt += """
-Generate recipes that match the user's preferences and cooking history.
-Prioritize recipes similar to highly-rated dishes in their history.
+        return f"""
+Generate personalized recipes using: {ingredients_str}
 
-Return as JSON array of recipes (same format as regular suggestions).
+Return ONLY valid JSON array.
+No markdown.
+No explanation.
 """
-        return prompt
+
+    # ==========================================================
+    # PARSING (ROBUST VERSION)
+    # ==========================================================
+
+    def _extract_json_array(self, text: str) -> str:
+        start = text.find("[")
+        end = text.rfind("]")
+        if start == -1 or end == -1:
+            raise ValueError("No JSON array found in response")
+        return text[start:end + 1]
+
+    def _extract_json_object(self, text: str) -> str:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start == -1 or end == -1:
+            raise ValueError("No JSON object found in response")
+        return text[start:end + 1]
+
+    def _clean_json_string(self, text: str) -> str:
+        text = text.replace("```json", "").replace("```", "")
+        text = re.sub(r",\s*}", "}", text)
+        text = re.sub(r",\s*]", "]", text)
+        return text.strip()
+
+    def _safe_json_load(self, json_str: str):
+        json_str = self._clean_json_string(json_str)
+
+        if JSON_REPAIR_AVAILABLE:
+            json_str = repair_json(json_str)
+
+        return json.loads(json_str)
+
     
-    def _parse_recipes_response(self, response_text: str, available_ingredients: List[str]) -> List[Recipe]:
-        """Parse Ollama response into recipe list"""
-        try:
-            # Extract JSON array from response
-            json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(0)
-                recipes_data = json.loads(json_str)
-            else:
-                recipes_data = json.loads(response_text)
-            
-            recipes = []
-            for idx, item in enumerate(recipes_data):
-                # Calculate match percentage
-                required = item.get('ingredients_required', [])
-                missing = item.get('ingredients_missing', [])
-                if required:
-                    match_pct = ((len(required) - len(missing)) / len(required)) * 100
-                else:
-                    match_pct = 0.0
-                
-                recipes.append(Recipe(
-                    id=item.get('id', f'recipe_{idx}'),
-                    name=item.get('name', 'Unknown Recipe'),
-                    description=item.get('description', ''),
-                    ingredients_required=required,
-                    ingredients_missing=missing,
-                    match_percentage=match_pct,
-                    cooking_time=item.get('cooking_time', 30),
-                    difficulty=item.get('difficulty', 'beginner'),
-                    cuisine=item.get('cuisine'),
-                    dietary_info=item.get('dietary_info', []),
-                    image_url=item.get('image_url')
-                ))
-            
-            return recipes
-            
-        except (json.JSONDecodeError, KeyError) as e:
-            logger.error(f"Failed to parse recipes response: {str(e)}")
-            raise ValueError("Invalid recipe response format")
-    
+
     def _parse_recipe_details_response(
         self,
         response_text: str,
         request: RecipeDetailsRequest
     ) -> RecipeDetailsResponse:
-        """Parse Ollama response into recipe details"""
+
         try:
-            # Extract JSON from response
-            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(0)
-                recipe_data = json.loads(json_str)
-            else:
-                recipe_data = json.loads(response_text)
-            
+            # Load JSON
+            recipe_data = json.loads(response_text)
+
+            # Ensure it's a dictionary (single recipe object)
+            if not isinstance(recipe_data, dict):
+                raise ValueError("AI response must be a JSON object")
+
             # Parse ingredients
-            ingredients = []
-            for ing in recipe_data.get('ingredients', []):
-                ingredients.append(RecipeIngredient(
-                    name=ing.get('name', ''),
-                    quantity=ing.get('quantity', ''),
-                    unit=ing.get('unit', '')
-                ))
-            
+            ingredients = [
+                RecipeIngredient(**ing)
+                for ing in recipe_data.get("ingredients", [])
+            ]
+
             # Parse instructions
-            instructions = []
-            for inst in recipe_data.get('instructions', []):
-                instructions.append(RecipeInstruction(
-                    step=inst.get('step', len(instructions) + 1),
-                    description=inst.get('description', ''),
-                    duration=inst.get('duration')
-                ))
-            
+            instructions = [
+                RecipeInstruction(**inst)
+                for inst in recipe_data.get("instructions", [])
+            ]
+
             # Parse nutrition
-            nutrition_data = recipe_data.get('nutrition', {})
             nutrition = None
-            if nutrition_data:
-                nutrition = NutritionInfo(
-                    calories=nutrition_data.get('calories'),
-                    protein=nutrition_data.get('protein'),
-                    carbs=nutrition_data.get('carbs'),
-                    fat=nutrition_data.get('fat')
-                )
-            
+            if recipe_data.get("nutrition"):
+                nutrition = NutritionInfo(**recipe_data["nutrition"])
+
             return RecipeDetailsResponse(
                 recipe_id=f"recipe_{hash(request.recipe_name)}",
                 name=request.recipe_name,
-                description=recipe_data.get('description', ''),
+                description=recipe_data.get("description", ""),
                 ingredients=ingredients,
                 instructions=instructions,
-                cooking_time=recipe_data.get('cooking_time', request.cooking_time or 30),
-                prep_time=recipe_data.get('prep_time', 10),
-                total_time=recipe_data.get('total_time', recipe_data.get('prep_time', 10) + recipe_data.get('cooking_time', 30)),
+                cooking_time=recipe_data.get("cooking_time", 30),
+                prep_time=recipe_data.get("prep_time", 10),
+                total_time=recipe_data.get("total_time", 40),
                 servings=request.servings,
-                difficulty=recipe_data.get('difficulty', 'beginner'),
-                nutrition=nutrition
+                difficulty=recipe_data.get("difficulty", "beginner"),
+                nutrition=nutrition,
             )
-            
-        except (json.JSONDecodeError, KeyError) as e:
+
+        except Exception as e:
             logger.error(f"Failed to parse recipe details: {str(e)}")
+            logger.error(response_text)
             raise ValueError("Invalid recipe details format")
-    
+
+    # def _parse_recipe_details_response(
+    #     self,
+    #     response_text: str,
+    #     request: RecipeDetailsRequest
+    # ) -> RecipeDetailsResponse:
+
+    #     try:
+            
+    #         recipe_data = json.loads(response_text)
+
+    #         # ✅ Case 1: wrapped object
+    #         if isinstance(recipe_data, dict) and "recipes" in recipe_data:
+    #             recipe_data = recipe_data["recipes"]
+
+    #         # ✅ Case 2: single recipe object → convert to list
+    #         elif isinstance(recipe_data, dict):
+    #             recipe_data = [recipe_data]
+
+    #         # ❌ Not valid
+    #         if not isinstance(recipe_data, list):
+    #             raise ValueError("AI response was not a list or valid recipe object")
+
+    #         # json_str = self._extract_json_object(data)
+    #         # recipe_data = self._safe_json_load(json_str)
+
+    #         ingredients = [
+    #             RecipeIngredient(**ing)
+    #             for ing in recipe_data.get("ingredients", [])
+    #         ]
+
+    #         instructions = [
+    #             RecipeInstruction(**inst)
+    #             for inst in recipe_data.get("instructions", [])
+    #         ]
+
+    #         nutrition = None
+    #         if recipe_data.get("nutrition"):
+    #             nutrition = NutritionInfo(**recipe_data["nutrition"])
+
+
+    #         return RecipeDetailsResponse(
+    #             recipe_id=f"recipe_{hash(request.recipe_name)}",
+    #             name=request.recipe_name,
+    #             description=recipe_data.get("description", ""),
+    #             ingredients=ingredients,
+    #             instructions=instructions,
+    #             cooking_time=recipe_data.get("cooking_time", 30),
+    #             prep_time=recipe_data.get("prep_time", 10),
+    #             total_time=recipe_data.get("total_time", 40),
+    #             servings=request.servings,
+    #             difficulty=recipe_data.get("difficulty", "beginner"),
+    #             nutrition=nutrition,
+    #         )
+
+    #     except Exception:
+    #         logger.error("Failed to parse recipe details")
+    #         logger.error(response_text)
+    #         raise ValueError("Invalid recipe details format")
+
+    # ==========================================================
+    # FILTERS
+    # ==========================================================
+
     def _apply_filters(self, recipes: List[Recipe], filters) -> List[Recipe]:
-        """Apply filters to recipe list"""
-        filtered = recipes.copy()
-        
+        filtered = recipes
+
         if filters.dietary_restrictions:
-            filtered = [r for r in filtered if any(
-                diet in r.dietary_info for diet in filters.dietary_restrictions
-            )]
-        
+            filtered = [
+                r for r in filtered
+                if any(d in r.dietary_info for d in filters.dietary_restrictions)
+            ]
+
         if filters.cuisine:
             filtered = [r for r in filtered if r.cuisine == filters.cuisine]
-        
+
         if filters.cooking_time:
             filtered = [r for r in filtered if r.cooking_time <= filters.cooking_time]
-        
+
         if filters.difficulty:
             filtered = [r for r in filtered if r.difficulty == filters.difficulty]
-        
-        if filters.exclude_ingredients:
-            filtered = [r for r in filtered if not any(
-                ing in r.ingredients_required for ing in filters.exclude_ingredients
-            )]
-        
+
         return filtered
-    
-    def _calculate_personalization_score(
-        self,
-        recipes: List[Recipe],
-        history: List[CookingHistoryEntry],
-        preferences
-    ) -> float:
-        """Calculate personalization score"""
-        if not history and not preferences:
-            return 0.5  # Neutral score
-        
-        # Simple scoring based on history ratings
-        if history:
-            avg_rating = sum(h.rating for h in history) / len(history)
-            return min(avg_rating / 5.0, 1.0)
-        
-        return 0.7  # Default score
-    
-    def _generate_recommendation_reason(
-        self,
-        recipes: List[Recipe],
-        history: List[CookingHistoryEntry],
-        preferences
-    ) -> str:
-        """Generate recommendation reason"""
-        reasons = []
-        
-        if preferences and preferences.cuisine_preferences:
-            reasons.append(f"Based on your preference for {', '.join(preferences.cuisine_preferences)} cuisine")
-        
-        if history:
-            high_rated = [h for h in history if h.rating >= 4]
-            if high_rated:
-                reasons.append("similar to recipes you've highly rated")
-        
-        if not reasons:
-            return "Based on your available ingredients and preferences"
-        
-        return ", ".join(reasons) + "."
